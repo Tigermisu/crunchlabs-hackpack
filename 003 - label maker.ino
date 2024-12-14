@@ -39,16 +39,17 @@
 LiquidCrystal_I2C lcd(0x27, 16, 2);  // Set the LCD address to 0x27 for a 16x2 display
 
 ezButton button1(14); //joystick button handler
-#define INIT_MSG "Initializing..." // Text to display on startup
-#define MODE_NAME "   LABELMAKER   " //these are variables for the text which is displayed in different menus. 
+#define INIT_MSG "  Please Wait  " // Text to display on startup
+#define INIT_SUBTITLE "   (loading)    " // Text to display on startup (subtitle)
+#define MODE_NAME "LABELMAKER V2.00" //these are variables for the text which is displayed in different menus. 
 #define PRINT_CONF "  PRINT LABEL?  " //try changing these, or making new ones and adding conditions for when they are used
 #define PRINTING "    PRINTING    " // NOTE: this text must be 16 characters or LESS in order to fit on the screen correctly
 #define MENU_CLEAR ":                " //this one clears the menu for editing
 
 
 //text variables
-int x_scale = 230;//these are multiplied against the stored coordinate (between 0 and 4) to get the actual number of steps moved
-int y_scale = 230;//for example, if this is 230(default), then 230(scale) x 4(max coordinate) = 920 (motor steps)
+int x_scale = 75;//these are multiplied against the stored coordinate (between 0 and 4) to get the actual number of steps moved
+int y_scale = 90;//for example, if this is 230(default), then 230(scale) x 4(max coordinate) = 920 (motor steps)
 int scale = x_scale;
 int space = x_scale * 5; //space size between letters (as steps) based on X scale in order to match letter width
 //multiplied by 5 because the scale variables are multiplied against coordinates later, while space is just fed in directly, so it needs to be scaled up by 5 to match
@@ -60,9 +61,10 @@ const int joystickYPin = A1;  // Connect the joystick Y-axis to this analog pin
 const int joystickButtonThreshold = 200;  // Adjust this threshold value based on your joystick
 
 // Menu parameters
-const char alphabet[] = "_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!?,.#@"; //alphabet menu
+const char alphabet[] = "_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!?,.#@$~"; //alphabet menu
 int alphabetSize = sizeof(alphabet) - 1;
-String text;  // Store the label text
+String text[] ={"", ""};  // Store the label text for both rows
+int currentRow = 0;
 
 int currentCharacter = 0; //keep track of which character is currently displayed under the cursor
 int cursorPosition = 0; //keeps track of the cursor position (left to right) on the screen
@@ -101,6 +103,8 @@ int lineCount = 0;
 
 int xpos = 0;
 int ypos = 0;
+int firstWordxPos = 0;
+int finalPos = 0;
 const int posS = 2;
 const int posM = 7;
 const int posL = 12;
@@ -108,9 +112,12 @@ bool joyUp;
 bool joyDown;
 bool joyLeft;
 bool joyRight;
+bool hasTwoRowsOfText;
 int button1State;
 int joystickX;
 int joystickY;
+int consecutiveHeldCount = 0; // How many loop iterations the same joystick position has been held
+int letterScrollDelay = 80;
 
 //////////////////////////////////////////////////
 //  CHARACTER VECTORS  //
@@ -199,6 +206,9 @@ void setup() {
 
   lcd.setCursor(0, 0);
   lcd.print(INIT_MSG);  // print start up message
+  lcd.setCursor(0, 1);
+  lcd.print(INIT_SUBTITLE);
+
 
   pinMode(LED_BUILTIN, OUTPUT);
 
@@ -212,8 +222,8 @@ void setup() {
   plot(false);  //servo to tape surface so pen can be inserted
 
   // set the speed of the motors
-  yStepper.setSpeed(12);  // set first stepper speed (these should stay the same)
-  xStepper.setSpeed(10);  // set second stepper speed (^ weird stuff happens when you push it too fast)
+  yStepper.setSpeed(14);  // set first stepper speed (these should stay the same)
+  xStepper.setSpeed(12);  // set second stepper speed (^ weird stuff happens when you push it too fast)
 
   penUp();      //ensure that the servo is lifting the pen carriage away from the tape
   homeYAxis();  //lower the Y axis all the way to the bottom
@@ -276,69 +286,104 @@ void loop() {
       // Editing mode
       if (prevState != Editing) {
         lcd.clear();
+        currentRow = 0;
         prevState = Editing;
       }
       //lcd.clear();
-      lcd.setCursor(0, 0);
+      lcd.setCursor(0, currentRow);
       lcd.print(":");
-      lcd.setCursor(1, 0);
-      lcd.print(text);
+      lcd.setCursor(1, currentRow);
+      lcd.print(text[currentRow]);
+
+      
+        
+      if((joyUp && prevJoyState == UP) || (joyDown && prevJoyState == DOWN)) {
+        consecutiveHeldCount++;
+      } else {
+        consecutiveHeldCount = 0;
+      }
 
       // Check if the joystick is moved up (previous letter) or down (next letter)
-
       if (joyUp) {  //UP (previous character)
         Serial.println(currentCharacter);
-        if (currentCharacter > 0) {
+
+        if(consecutiveHeldCount == 0 ||  consecutiveHeldCount >= 8) {
           currentCharacter--;
-          lcd.print(alphabet[currentCharacter]);
-          //Serial.println("Character UP");
         }
-        delay(250);  // Delay to prevent rapid scrolling
+        
+        if (currentCharacter < 0) {
+          currentCharacter = alphabetSize - 1;
+        }
+
+        //Serial.println("Character UP");
+        lcd.print(alphabet[currentCharacter]);
+
+        prevJoyState = UP;
+        delay(letterScrollDelay);  // Delay to prevent rapid scrolling
 
       } else if (joyDown) {  //DOWN (next character)
-        Serial.println(currentCharacter);
-        if (currentCharacter < (alphabetSize - 1)) {
-          currentCharacter++;  //increment character value
-          lcd.print(alphabet[currentCharacter]);
-          //Serial.println("Character DOWN");
+        Serial.println(currentCharacter);      
+
+        if(consecutiveHeldCount == 0 ||  consecutiveHeldCount >= 8) {
+          currentCharacter++;
         }
-        delay(250);  // Delay to prevent rapid scrolling
+
+        if (currentCharacter > (alphabetSize - 1)) {
+          currentCharacter = 0;
+        }
+
+
+        lcd.print(alphabet[currentCharacter]);
+        //Serial.println("Character DOWN");
+        
+        prevJoyState = DOWN;
+        delay(letterScrollDelay);  // Delay to prevent rapid scrolling
+      } else if (joyLeft) {
+        // Check if the joystick is moved left (backspace) or right (add space)
+        prevJoyState = LEFT;
+        // LEFT (backspace)
+        if (text[currentRow].length() > 0) {
+          text[currentRow].remove(text[currentRow].length() - 1);
+          lcd.setCursor(0, currentRow);
+          lcd.print(MENU_CLEAR);  //clear and reprint the string so characters dont hang
+          lcd.setCursor(1, currentRow);
+          lcd.print(text[currentRow]);
+        }
+        delay(250);  // Delay to prevent rapid multiple presses
+      } else if (joyRight) {  //RIGHT adds a space or character to the label
+        prevJoyState = RIGHT;
+        if (currentCharacter == 0) {
+          text[currentRow] += ' ';  //add a space if the character is _
+        } else if (currentCharacter == (alphabetSize - 1)) {      
+          lcd.setCursor(0, currentRow);
+          lcd.print(MENU_CLEAR);  //clear and reprint the string so characters dont hang
+          lcd.setCursor(1, currentRow);
+          lcd.print(text[currentRow]);
+
+          currentRow = (currentRow+1) % 2;          
+          currentCharacter = 0;
+        } else {
+          text[currentRow] += alphabet[currentCharacter];  //add the current character to the text[currentRow]
+          currentCharacter = 0;
+        }
+        delay(250);  // Delay to prevent rapid multiple presses
       } else {
-        if (millis() % 600 < 450) {
+        prevJoyState = MIDDLE;
+        consecutiveHeldCount = 0;
+
+        if (millis() % 600 < 500) {
           lcd.print(alphabet[currentCharacter]);
         } else {
           lcd.print(" ");
         }
       }
 
-      // Check if the joystick is moved left (backspace) or right (add space)
-      if (joyLeft) {
-        // LEFT (backspace)
-        if (text.length() > 0) {
-          text.remove(text.length() - 1);
-          lcd.setCursor(0, 0);
-          lcd.print(MENU_CLEAR);  //clear and reprint the string so characters dont hang
-          lcd.setCursor(1, 0);
-          lcd.print(text);
-        }
-        delay(250);  // Delay to prevent rapid multiple presses
-
-      } else if (joyRight) {  //RIGHT adds a space or character to the label
-        if (currentCharacter == 0) {
-          text += ' ';  //add a space if the character is _
-        } else {
-          text += alphabet[currentCharacter];  //add the current character to the text
-          currentCharacter = 0;
-        }
-        delay(250);  // Delay to prevent rapid multiple presses
-      }
-
       if (button1.isPressed()) {
         // Single click: Add character and reset alphabet scroll
         if (currentCharacter == 0) {
-          text += ' ';  //add a space if the character is _
+          text[currentRow] += ' ';  //add a space if the character is _
         } else {
-          text += alphabet[currentCharacter];  //add the current character to the text
+          text[currentRow] += alphabet[currentCharacter];  //add the current character to the text[currentRow]
           currentCharacter = 0;                // reset for the next character
         }
         lcd.clear();
@@ -405,14 +450,32 @@ void loop() {
         lcd.print(PRINTING);  //update screen
       }
 
-      // ----------------------------------------------- plot text
-      plotText(text, xpos, ypos);
+      hasTwoRowsOfText = text[0].length() > 0 && text[1].length() > 0;
 
-      line(xpos + space, 0, 0);  // move to new line
+      if(!hasTwoRowsOfText) {
+        text[0] = text[0].length() > 0 ? text[0] : text[1];
+      }
+
+      // ----------------------------------------------- plot text
+      if(hasTwoRowsOfText) {
+        line(0, 100 * 5 * 4, 0);
+        firstWordxPos = xpos;
+      }
+      plotText(text[0], xpos, ypos);    
+      finalPos = xpos + space;
+      line(hasTwoRowsOfText ? firstWordxPos : finalPos, 0, 0);  // move to new line
       xpos = 0;
       ypos = 0;
 
-      text = "";
+      if(hasTwoRowsOfText) {
+        plotText(text[1], firstWordxPos, ypos);
+        line(xpos + space > finalPos ? xpos + space : finalPos, 0, 0);  // move to new line
+        xpos = 0;
+        ypos = 0;
+      }
+
+      text[0] = "";
+      text[1] = "";
       yStepper.step(-2250);
       releaseMotors();
       lcd.clear();
@@ -693,5 +756,4 @@ void resetScreen() {
   lcd.setCursor(1, 0);  //move cursor down to row 1 column 0
   cursorPosition = 1;
 }
-
 
