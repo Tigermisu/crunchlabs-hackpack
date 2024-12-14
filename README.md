@@ -9,6 +9,6 @@ Just my personal collection of hacks I've done on the CrunchLabs HackPack box.
 - Left/Right do not trigger anymore if Up/Down triggers (prevents accidental deletes or spaces while scrolling).
 
 ### Double line printing
-- Decreased scale to print on half of the vanilla painter's tape.
-- New character introduced (~) to break line while editing, allowing you to type a second word in the screen.
-- Prints on both lines, the top one on the top half, the bottom one on the bottom half.
+- Decreased default scale to print on half of the vanilla painter's tape.
+- New character introduced (~, looks like a right arrow on the LCD screen) to break line while editing, allowing you to type a second word in the screen.
+- If enabled, prints on both lines, the top one on the top half, the bottom one on the bottom half.
